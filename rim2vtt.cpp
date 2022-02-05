@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "el1/gen/dbg/amalgam/el1.hpp"
 #include "base64.h"
+#include "zlib.h"
 
 using namespace std;
 using namespace tinyxml2;
@@ -18,6 +19,7 @@ namespace rim2vtt
 	using namespace el1::io::stream;
 	using namespace el1::io::file;
 	using namespace el1::math;
+	using namespace el1::debug;
 
 	struct tile_pos_t;
 
@@ -127,8 +129,7 @@ namespace rim2vtt
 	enum class EObstacleType : u8_t
 	{
 		NONE,
-		TERRAIN_WALL,
-		CONSTRUCTED_WALL,
+		WALL,
 		WINDOW,
 		DOOR
 	};
@@ -313,7 +314,7 @@ namespace rim2vtt
 	tile_index_t TObstacleMap::PlaceObstacleAt(const map_pos_t pos, const EObstacleType type)
 	{
 		tile_index_t& index = this->array[pos[1] * this->size[0] + pos[0]];
-		EL_ERROR(index != INDEX_NONE, TException, "cannot place obstacle at {%d; %d}: there is already an obstacle here");
+		EL_ERROR(index != INDEX_NONE, TException, TString::Format("cannot place obstacle at {%d; %d}: there is already an obstacle here (current-type: %d, wanted-type: %d)", pos[0], pos[1], (u8_t)this->nodes[index].Type(), (u8_t)type));
 		EL_ERROR(this->nodes.Count() >= (usys_t)((tile_index_t)-2), TException, TString::Format("too many obstacles on map (current: %d, limit: %d)", this->nodes.Count(), (tile_index_t)-2));
 
 		this->nodes.Append(TObstacleNode(this, pos, type));
@@ -491,9 +492,17 @@ namespace rim2vtt
 		map_pos_t image_pos;
 		map_pos_t image_size;
 
+		tile_pos_t ClipToImageArea(const tile_pos_t pos) const;
+		bool IsWithinImageArea(const map_pos_t pos) const;
+
 		void ExportVTT(ostream& os, TFile& image);
 		TMap(XMLElement* map_node);
 	};
+
+	static bool IsBase64Char(const char chr)
+	{
+		return (chr >= 'A' && chr <= 'Z') || (chr >= 'a' && chr <= 'z') || (chr >= '0' && chr <= '9') || chr == '+' || chr == '/';
+	}
 
 	TMap::TMap(XMLElement* map_node) : obstacle_map(MapPosFromString(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
 	{
@@ -524,11 +533,75 @@ namespace rim2vtt
 
 		cerr<<"image area: pos = {"<<this->image_pos[0]<<"; "<<this->image_pos[1]<<"}, size = {"<<this->image_size[0]<<"; "<<this->image_size[1]<<"}"<<endl;
 
+		EL_ERROR(this->image_size[0] > this->size[0] || this->image_size[1] > this->size[1], TException, "image size is bigger than map size");
+
 		unsigned n_walls = 0;
 		unsigned n_windows = 0;
 		unsigned n_doors = 0;
 		unsigned n_terrain = 0;
 		unsigned n_lights = 0;
+
+
+
+
+
+
+		{
+			TList<u16_t> terrain_grid_data;
+			terrain_grid_data.Inflate(this->size[0] * this->size[1], 0);
+
+			auto terrain_node = map_node->FirstChildElement("compressedThingMapDeflate");
+			EL_ERROR(terrain_node == nullptr, TException, "no <terrainGrid> node found");
+// 			auto top_grid_deflate_node = terrain_node->FirstChildElement("topGridDeflate");
+// 			auto top_grid_plain_node = terrain_node->FirstChildElement("topGrid");
+// 			EL_ERROR((top_grid_deflate_node == nullptr && top_grid_plain_node == nullptr) || (top_grid_deflate_node != nullptr && top_grid_plain_node != nullptr), TException, "something is wrong with <topGridDeflate> and <topGrid>");
+
+			TList<char> base64_data;
+// 			const char* base64_text_src = (top_grid_deflate_node != nullptr) ? top_grid_deflate_node->GetText() : top_grid_plain_node->GetText();
+			const char* base64_text_src = terrain_node->GetText();
+			for(const char* p = base64_text_src; *p != 0; p++)
+				if(IsBase64Char(*p))
+					base64_data.Append(*p);
+
+			cerr<<"strlen(base64_text_src): "<<strlen(base64_text_src)<<endl;
+			cerr<<"base64_data.Count(): "<<base64_data.Count()<<endl;
+
+
+			TList<byte_t> raw_data;
+			raw_data.Append(0x78);
+			raw_data.Append(0x9c);
+			raw_data.Inflate(Base64decode_len(&base64_data[0]), 0);
+			cerr<<"raw_data.Count(): "<<raw_data.Count()<<endl;
+			int ret = Base64decode((char*)&raw_data[2], &base64_data[0]);
+			cerr<<"Base64decode: "<<ret<<endl;
+			EL_ERROR(ret < 0 || ret > (int)raw_data.Count(), TLogicException);
+			raw_data.Cut(0, raw_data.Count() - ret);
+
+
+			unsigned long uncompressed_size = terrain_grid_data.Count() * 2;
+			ret = uncompress((byte_t*)&terrain_grid_data[0], &uncompressed_size, (byte_t*)&raw_data[0], raw_data.Count());
+// 			EL_ERROR(uncompressed_size != terrain_grid_data.Count() * 2, TException, TString::Format("decompression of terrain-grid returned an unexpected amount of data (expected: %d, got: %d)", terrain_grid_data.Count() * 2, (usys_t)uncompressed_size));
+// 			Hexdump(&terrain_grid_data[0], terrain_grid_data.Count() * 2);
+			for(s16_t y = 0; y < size[1]; y++)
+			{
+				for(s16_t x = 0; x < size[0]; x++)
+				{
+					if(terrain_grid_data[(/*size[1] -*/ y /*- 1*/) * size[0] + x] != 0)
+					{
+						n_terrain++;
+						this->obstacle_map.PlaceObstacleAt({x,y}, EObstacleType::WALL);
+					}
+				}
+				fputc('\n', stdout);
+			}
+		}
+
+
+
+
+
+
+
 
 		for(auto thing_node = map_node->FirstChildElement("things")->FirstChildElement("thing"); thing_node != nullptr; thing_node = thing_node->	NextSiblingElement())
 		{
@@ -544,12 +617,12 @@ namespace rim2vtt
 					if(def_node != nullptr)
 					{
 
-						if(strcmp(def_node->GetText(), "Wall") == 0)
+						if(strcmp(def_node->GetText(), "Wall") == 0 || strcmp(def_node->GetText(), "RadiationShielding") == 0)
 						{
 							n_walls++;
-							this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::CONSTRUCTED_WALL);
+							this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::WALL);
 						}
-						else if(strcmp(def_node->GetText(), "Door") == 0 || strcmp(def_node->GetText(), "ToiletStallDoor") == 0)
+						else if(strcmp(def_node->GetText(), "Door") == 0 || strcmp(def_node->GetText(), "ToiletStallDoor") == 0 || strcmp(def_node->GetText(), "DU_Blastdoor") == 0 || strcmp(def_node->GetText(), "Autodoor") == 0)
 						{
 							n_doors++;
 							this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::DOOR);
@@ -559,19 +632,24 @@ namespace rim2vtt
 							n_windows++;
 							this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::WINDOW);
 						}
+						else if(strcmp(def_node->GetText(), "TorchLamp") == 0)
+						{
+							n_lights++;
+							this->lights.Append(light_source_t({pos, 4}));
+						}
 					}
 				}
 				else if(strcmp(thing_node->Attribute("Class"), "Mineable") == 0)
 				{
 					n_terrain++;
-					this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::TERRAIN_WALL);
+					this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::WALL);
 				}
 				else if(strcmp(thing_node->Attribute("Class"), "MURWallLight.WallLight") == 0)
 				{
 					n_lights++;
 					auto rot_node = thing_node->FirstChildElement("rot");
 					const int rot = (rot_node == nullptr) ? 0 : rot_node->Int64Text(0);
-					this->lights.Append(light_source_t({pos + RimworldRotationToVector(rot).tile, 5}));
+					this->lights.Append(light_source_t({pos + RimworldRotationToVector(rot).tile, 6}));
 				}
 			}
 		}
@@ -603,7 +681,7 @@ namespace rim2vtt
 
 		for(usys_t i = 0; i < obstacles.Count(); i++)
 		{
-			if(obstacles[i].type == EObstacleType::TERRAIN_WALL || obstacles[i].type == EObstacleType::CONSTRUCTED_WALL)
+			if(obstacles[i].type == EObstacleType::WALL)
 			{
 				const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
 				const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
@@ -692,7 +770,7 @@ namespace rim2vtt
 			first = false;
 			os<<"{"<<endl;
 			os<<"  \"position\": { \"x\": "<<eff_pos[0]<<".5, \"y\": "<<eff_pos[1]<<".5 },"<<endl;
-			os<<"  \"range\": "<<lights[i].range<<","<<endl;
+			os<<"  \"range\": "<<(lights[i].range/4.0f)<<","<<endl;
 			os<<"  \"intensity\": 1,"<<endl;
 			os<<"  \"color\": \"00000000\","<<endl;
 			os<<"  \"shadows\": true"<<endl;
