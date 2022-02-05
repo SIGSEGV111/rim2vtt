@@ -17,51 +17,19 @@ namespace rim2vtt
 	using namespace el1::io::collection::list;
 	using namespace el1::io::stream;
 	using namespace el1::io::file;
+	using namespace el1::math;
 
 	struct tile_pos_t;
 
-	struct map_pos_t
+	using map_pos_t = TVector<s16_t, 2>;
+
+	static map_pos_t MapPosFromString(const char* const str)
 	{
-		s16_t x, y;
-
-		static map_pos_t FromString(const char* const str)
-		{
-			map_pos_t pos;
-			if(sscanf(str, " ( %hd , %*d , %hd ) ", &pos.x, &pos.y) != 2)
-				throw "unable to parse map size";
-			return pos;
-		}
-
-		map_pos_t& operator+=(const map_pos_t& rhs)
-		{
-			x += rhs.x;
-			y += rhs.y;
-			return *this;
-		}
-
-		map_pos_t& operator-=(const map_pos_t& rhs)
-		{
-			x -= rhs.x;
-			y -= rhs.y;
-			return *this;
-		}
-
-		map_pos_t operator+(const map_pos_t& rhs) const
-		{
-			map_pos_t r = *this;
-			r += rhs;
-			return r;
-		}
-
-		map_pos_t operator-(const map_pos_t& rhs) const
-		{
-			map_pos_t r = *this;
-			r -= rhs;
-			return r;
-		}
-
-		operator tile_pos_t() const;
-	};
+		map_pos_t pos;
+		if(sscanf(str, " ( %hd , %*d , %hd ) ", &pos[0], &pos[1]) != 2)
+			throw "unable to parse map size";
+		return pos;
+	}
 
 	struct tile_pos_t
 	{
@@ -73,25 +41,25 @@ namespace rim2vtt
 			// FIXME: ... no comment ...
 			while(tx > 0.5f)
 			{
-				tile.x++;
+				tile[0]++;
 				tx -= 1.0f;
 			}
 
 			while(tx < -0.5f)
 			{
-				tile.x--;
+				tile[0]--;
 				tx += 1.0f;
 			}
 
 			while(ty > 0.5f)
 			{
-				tile.y++;
+				tile[1]++;
 				ty -= 1.0f;
 			}
 
 			while(ty < -0.5f)
 			{
-				tile.y--;
+				tile[1]--;
 				ty += 1.0f;
 			}
 		}
@@ -130,10 +98,10 @@ namespace rim2vtt
 
 		tile_pos_t& operator/=(const float divider)
 		{
-			tx = (tile.x + tx) / divider;
-			ty = (tile.y + ty) / divider;
-			tile.x = 0;
-			tile.y = 0;
+			tx = (tile[0] + tx) / divider;
+			ty = (tile[1] + ty) / divider;
+			tile[0] = 0;
+			tile[1] = 0;
 			Normalize();
 			return *this;
 		}
@@ -144,12 +112,11 @@ namespace rim2vtt
 			r /= divider;
 			return r;
 		}
-	};
 
-	map_pos_t::operator tile_pos_t() const
-	{
-		return tile_pos_t({ *this, 0.0f, 0.0f });
-	}
+		tile_pos_t(const map_pos_t pos = {0,0}, const float tx = 0.0f, const float ty = 0.0f) : tile({ pos[0], pos[1] }), tx(tx), ty(ty)
+		{
+		}
+	};
 
 	struct light_source_t
 	{
@@ -340,12 +307,12 @@ namespace rim2vtt
 
 	bool TObstacleMap::IsValidPosition(const map_pos_t pos) const
 	{
-		return pos.x >= 0 && pos.y >= 0 && pos.x < size.x && pos.y < size.y;
+		return pos[0] >= 0 && pos[1] >= 0 && pos[0] < size[0] && pos[1] < size[1];
 	}
 
 	tile_index_t TObstacleMap::PlaceObstacleAt(const map_pos_t pos, const EObstacleType type)
 	{
-		tile_index_t& index = this->array[pos.y * this->size.x + pos.x];
+		tile_index_t& index = this->array[pos[1] * this->size[0] + pos[0]];
 		EL_ERROR(index != INDEX_NONE, TException, "cannot place obstacle at {%d; %d}: there is already an obstacle here");
 		EL_ERROR(this->nodes.Count() >= (usys_t)((tile_index_t)-2), TException, TString::Format("too many obstacles on map (current: %d, limit: %d)", this->nodes.Count(), (tile_index_t)-2));
 
@@ -358,7 +325,7 @@ namespace rim2vtt
 	{
 		if(this->IsValidPosition(pos))
 		{
-			const tile_index_t index = this->array[pos.y * this->size.x + pos.x];
+			const tile_index_t index = this->array[pos[1] * this->size[0] + pos[0]];
 			if(index != INDEX_NONE)
 				return &this->nodes[index];
 			else
@@ -372,7 +339,7 @@ namespace rim2vtt
 	{
 		if(this->IsValidPosition(pos))
 		{
-			const tile_index_t index = this->array[pos.y * this->size.x + pos.x];
+			const tile_index_t index = this->array[pos[1] * this->size[0] + pos[0]];
 			if(index != INDEX_NONE)
 				return &this->nodes[index];
 			else
@@ -511,7 +478,7 @@ namespace rim2vtt
 
 	TObstacleMap::TObstacleMap(const map_pos_t size) : size(size)
 	{
-		array.Inflate(size.x * size.y, INDEX_NONE);
+		array.Inflate(size[0] * size[1], INDEX_NONE);
 	}
 
 	/****************************************************************************/
@@ -528,10 +495,10 @@ namespace rim2vtt
 		TMap(XMLElement* map_node);
 	};
 
-	TMap::TMap(XMLElement* map_node) : obstacle_map(map_pos_t::FromString(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
+	TMap::TMap(XMLElement* map_node) : obstacle_map(MapPosFromString(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
 	{
 		cerr<<endl<<"map ID: "<<map_node->FirstChildElement("uniqueID")->UnsignedText()<<endl;
-		cerr<<"size: ["<<this->size.x<<"; "<<this->size.y<<"]"<<endl;
+		cerr<<"size: ["<<this->size[0]<<"; "<<this->size[1]<<"]"<<endl;
 
 		this->image_pos = {0,0};
 		this->image_size = this->size;
@@ -555,7 +522,7 @@ namespace rim2vtt
 			}
 		}
 
-		cerr<<"image area: pos = {"<<this->image_pos.x<<"; "<<this->image_pos.y<<"}, size = {"<<this->image_size.x<<"; "<<this->image_size.y<<"}"<<endl;
+		cerr<<"image area: pos = {"<<this->image_pos[0]<<"; "<<this->image_pos[1]<<"}, size = {"<<this->image_size[0]<<"; "<<this->image_size[1]<<"}"<<endl;
 
 		unsigned n_walls = 0;
 		unsigned n_windows = 0;
@@ -567,7 +534,7 @@ namespace rim2vtt
 		{
 			if(thing_node->Attribute("Class") != nullptr)
 			{
-				const map_pos_t pos = thing_node->FirstChildElement("pos")->GetText() != nullptr ? map_pos_t::FromString(thing_node->FirstChildElement("pos")->GetText()) : map_pos_t({0,0});
+				const map_pos_t pos = thing_node->FirstChildElement("pos")->GetText() != nullptr ? MapPosFromString(thing_node->FirstChildElement("pos")->GetText()) : map_pos_t({0,0});
 
 				if( strcmp(thing_node->Attribute("Class"), "Building") == 0 ||
 					strcmp(thing_node->Attribute("Class"), "Building_Door") == 0 ||
@@ -627,7 +594,7 @@ namespace rim2vtt
 		os<<"\"format\":0.2,"<<endl;
 		os<<"\"resolution\":{"<<endl;
 		os<<"\"map_origin\":{ \"x\":0, \"y\":0 },"<<endl;
-		os<<"\"map_size\":{ \"x\":"<<this->image_size.x<<", \"y\":"<<this->image_size.y<<" },"<<endl;
+		os<<"\"map_size\":{ \"x\":"<<this->image_size[0]<<", \"y\":"<<this->image_size[1]<<" },"<<endl;
 		os<<"\"pixels_per_grid\":64"<<endl;
 		os<<"},"<<endl;
 		os<<"\"line_of_sight\":["<<endl;
@@ -644,8 +611,8 @@ namespace rim2vtt
 				if(!first) os<<",";
 				first = false;
 				os<<"["<<endl;
-				os<<"  { \"x\": "<<(from.tile.x + from.tx)<<", \"y\": "<<(this->image_size.y - (from.tile.y + from.ty))<<" },"<<endl;
-				os<<"  { \"x\": "<<(to.tile.x   + to.tx  )<<", \"y\": "<<(this->image_size.y - (to.tile.y   + to.ty  ))<<" }"<<endl;
+				os<<"  { \"x\": "<<(from.tile[0] + from.tx)<<", \"y\": "<<(this->image_size[1] - (from.tile[1] + from.ty))<<" },"<<endl;
+				os<<"  { \"x\": "<<(to.tile[0]   + to.tx  )<<", \"y\": "<<(this->image_size[1] - (to.tile[1]   + to.ty  ))<<" }"<<endl;
 				os<<"]";;
 				os<<endl;
 			}
@@ -688,10 +655,10 @@ namespace rim2vtt
 				if(!first) os<<",";
 				first = false;
 				os<<"{"<<endl;
-				os<<"  \"position\": { \"x\": "<<(center.tile.x + center.tx)<<", \"y\": "<<(this->image_size.y - (center.tile.y + center.ty))<<" },"<<endl;
+				os<<"  \"position\": { \"x\": "<<(center.tile[0] + center.tx)<<", \"y\": "<<(this->image_size[1] - (center.tile[1] + center.ty))<<" },"<<endl;
 				os<<"  \"bounds\": ["<<endl;
-				os<<"    { \"x\": "<<(from.tile.x + from.tx)<<", \"y\": "<<(this->image_size.y - (from.tile.y + from.ty))<<" },"<<endl;
-				os<<"    { \"x\": "<<(to.tile.x   + to.tx  )<<", \"y\": "<<(this->image_size.y - (to.tile.y   + to.ty  ))<<" }"<<endl;
+				os<<"    { \"x\": "<<(from.tile[0] + from.tx)<<", \"y\": "<<(this->image_size[1] - (from.tile[1] + from.ty))<<" },"<<endl;
+				os<<"    { \"x\": "<<(to.tile[0]   + to.tx  )<<", \"y\": "<<(this->image_size[1] - (to.tile[1]   + to.ty  ))<<" }"<<endl;
 				os<<"  ],"<<endl;
 				os<<"  \"rotation\": 1,"<<endl;
 				os<<"  \"closed\": true,"<<endl;
@@ -720,11 +687,11 @@ namespace rim2vtt
 		for(usys_t i = 0; i < lights.Count(); i++)
 		{
 			map_pos_t eff_pos = lights[i].pos - image_pos;
-			eff_pos.y = image_size.y - eff_pos.y - 1;
+			eff_pos[1] = image_size[1] - eff_pos[1] - 1;
 			if(!first) os<<",";
 			first = false;
 			os<<"{"<<endl;
-			os<<"  \"position\": { \"x\": "<<eff_pos.x<<".5, \"y\": "<<eff_pos.y<<".5 },"<<endl;
+			os<<"  \"position\": { \"x\": "<<eff_pos[0]<<".5, \"y\": "<<eff_pos[1]<<".5 },"<<endl;
 			os<<"  \"range\": "<<lights[i].range<<","<<endl;
 			os<<"  \"intensity\": 1,"<<endl;
 			os<<"  \"color\": \"00000000\","<<endl;
