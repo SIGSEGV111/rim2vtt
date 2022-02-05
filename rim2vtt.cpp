@@ -70,25 +70,26 @@ namespace rim2vtt
 
 		void Normalize()
 		{
-			if(tx > 0.5f)
+			// FIXME: ... no comment ...
+			while(tx > 0.5f)
 			{
 				tile.x++;
 				tx -= 1.0f;
 			}
 
-			if(tx < -0.5f)
+			while(tx < -0.5f)
 			{
 				tile.x--;
 				tx += 1.0f;
 			}
 
-			if(ty > 0.5f)
+			while(ty > 0.5f)
 			{
 				tile.y++;
 				ty -= 1.0f;
 			}
 
-			if(ty < -0.5f)
+			while(ty < -0.5f)
 			{
 				tile.y--;
 				ty += 1.0f;
@@ -124,6 +125,23 @@ namespace rim2vtt
 		{
 			tile_pos_t r = *this;
 			r -= rhs;
+			return r;
+		}
+
+		tile_pos_t& operator/=(const float divider)
+		{
+			tx = (tile.x + tx) / divider;
+			ty = (tile.y + ty) / divider;
+			tile.x = 0;
+			tile.y = 0;
+			Normalize();
+			return *this;
+		}
+
+		tile_pos_t operator/(const float divider) const
+		{
+			tile_pos_t r = *this;
+			r /= divider;
 			return r;
 		}
 	};
@@ -301,6 +319,18 @@ namespace rim2vtt
 		{ {-1, 1}, -0.5f,  0.5f }, // SOUTH WEST
 	};
 
+	static tile_pos_t RimworldRotationToVector(const int rot)
+	{
+		switch(rot)
+		{
+			case 0: return TObstacleNode::DIRECTIONS[6];
+			case 1: return TObstacleNode::DIRECTIONS[4];
+			case 2: return TObstacleNode::DIRECTIONS[2];
+			case 3: return TObstacleNode::DIRECTIONS[0];
+			default: EL_THROW(TInvalidArgumentException, "rot");
+		}
+	}
+
 	unsigned TObstacleNode::InvertDirection(const unsigned direction)
 	{
 		return (direction + N_DIRECTIONS/2) % N_DIRECTIONS;
@@ -364,20 +394,12 @@ namespace rim2vtt
 
 			if(neighbor->Type() != start_node.Type() || neighbor->WasDirectionProcessed(TObstacleNode::InvertDirection(direction)))
 			{
-				cerr<<"DEBUG: Walk(): n_walk_distance = "<<n_walk_distance;
-				if(neighbor->Type() != start_node.Type())
-					cerr<<"; terminating due to type-transition";
-				if(neighbor->WasDirectionProcessed(TObstacleNode::InvertDirection(direction)))
-					cerr<<"; terminating due to already processed direction";
-				cerr<<endl;
-
 				terminated_by_transition_or_processed_direction = true;
 				return current_node;
 			}
 
 			if(neighbor->CrossNeighborsCount() > 2)
 			{
-				cerr<<"DEBUG: Walk(): n_walk_distance = "<<n_walk_distance<<"; terminating due to encountering node with more than two neighbors"<<endl;
 				terminated_by_transition_or_processed_direction = false;
 				neighbor->MarkDirectionProcessed(TObstacleNode::InvertDirection(direction));
 				return neighbor;
@@ -388,7 +410,6 @@ namespace rim2vtt
 			n_walk_distance++;
 		}
 
-		cerr<<"DEBUG: Walk(): n_walk_distance = "<<n_walk_distance<<"; terminating due to end of straight path reached"<<endl;
 		terminated_by_transition_or_processed_direction = false;
 		current_node->MarkDirectionProcessed(direction);
 		return current_node;
@@ -400,22 +421,6 @@ namespace rim2vtt
 
 		for(usys_t i = 0; i < this->nodes.Count(); i++)
 			this->nodes[i].UpdateNeighbors();
-
-		cerr<<"dumping neightbor map:"<<endl;
-		for(s16_t y = 0; y < this->size.y; y++)
-		{
-			for(s16_t x = 0; x < this->size.x; x++)
-			{
-				TObstacleNode* node = (*this)[{x,y}];
-				if(node == nullptr)
-					cerr<<" ";
-				else
-					cerr<<((unsigned)node->CrossNeighborsCount());
-			}
-			cerr<<endl;
-		}
-		cerr<<"--------------------------------------------------"<<endl;
-
 
 		// start at an obstructed tile with unprocessed directions
 		// pick a unprocessed direction
@@ -514,6 +519,7 @@ namespace rim2vtt
 	struct TMap
 	{
 		TObstacleMap obstacle_map;
+		TList<light_source_t> lights;
 		const map_pos_t size;
 		map_pos_t image_pos;
 		map_pos_t image_size;
@@ -555,11 +561,14 @@ namespace rim2vtt
 		unsigned n_windows = 0;
 		unsigned n_doors = 0;
 		unsigned n_terrain = 0;
+		unsigned n_lights = 0;
 
 		for(auto thing_node = map_node->FirstChildElement("things")->FirstChildElement("thing"); thing_node != nullptr; thing_node = thing_node->	NextSiblingElement())
 		{
 			if(thing_node->Attribute("Class") != nullptr)
 			{
+				const map_pos_t pos = thing_node->FirstChildElement("pos")->GetText() != nullptr ? map_pos_t::FromString(thing_node->FirstChildElement("pos")->GetText()) : map_pos_t({0,0});
+
 				if( strcmp(thing_node->Attribute("Class"), "Building") == 0 ||
 					strcmp(thing_node->Attribute("Class"), "Building_Door") == 0 ||
 					strcmp(thing_node->Attribute("Class"), "DubsBadHygiene.Building_StallDoor") == 0)
@@ -567,7 +576,6 @@ namespace rim2vtt
 					auto def_node = thing_node->FirstChildElement("def");
 					if(def_node != nullptr)
 					{
-						const map_pos_t pos = map_pos_t::FromString(thing_node->FirstChildElement("pos")->GetText());
 
 						if(strcmp(def_node->GetText(), "Wall") == 0)
 						{
@@ -588,9 +596,15 @@ namespace rim2vtt
 				}
 				else if(strcmp(thing_node->Attribute("Class"), "Mineable") == 0)
 				{
-					const map_pos_t pos = map_pos_t::FromString(thing_node->FirstChildElement("pos")->GetText());
 					n_terrain++;
 					this->obstacle_map.PlaceObstacleAt(pos, EObstacleType::TERRAIN_WALL);
+				}
+				else if(strcmp(thing_node->Attribute("Class"), "MURWallLight.WallLight") == 0)
+				{
+					n_lights++;
+					auto rot_node = thing_node->FirstChildElement("rot");
+					const int rot = (rot_node == nullptr) ? 0 : rot_node->Int64Text(0);
+					this->lights.Append(light_source_t({pos + RimworldRotationToVector(rot).tile, 5}));
 				}
 			}
 		}
@@ -599,6 +613,7 @@ namespace rim2vtt
 		cerr<<"doors: "<<n_doors<<endl;
 		cerr<<"windows: "<<n_windows<<endl;
 		cerr<<"terrain: "<<n_terrain<<endl;
+		cerr<<"lights: "<<n_lights<<endl;
 
 		this->obstacle_map.ComputeObstacleGraph();
 		cerr<<"obstacles: "<<this->obstacle_map.Graph().Count()<<endl;
@@ -617,24 +632,105 @@ namespace rim2vtt
 		os<<"},"<<endl;
 		os<<"\"line_of_sight\":["<<endl;
 
+		bool first = true;
+
 		for(usys_t i = 0; i < obstacles.Count(); i++)
 		{
-			const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
-			const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
+			if(obstacles[i].type == EObstacleType::TERRAIN_WALL || obstacles[i].type == EObstacleType::CONSTRUCTED_WALL)
+			{
+				const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
+				const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
 
-			os<<"["<<endl;
-			os<<"  { \"x\": "<<(from.tile.x + from.tx)<<", \"y\": "<<(this->image_size.y - (from.tile.y + from.ty))<<" },"<<endl;
-			os<<"  { \"x\": "<<(to.tile.x   + to.tx  )<<", \"y\": "<<(this->image_size.y - (to.tile.y   + to.ty  ))<<" }"<<endl;
-			os<<"]";
-			if(i < obstacles.Count() - 1)
-				os<<",";
-			os<<endl;
+				if(!first) os<<",";
+				first = false;
+				os<<"["<<endl;
+				os<<"  { \"x\": "<<(from.tile.x + from.tx)<<", \"y\": "<<(this->image_size.y - (from.tile.y + from.ty))<<" },"<<endl;
+				os<<"  { \"x\": "<<(to.tile.x   + to.tx  )<<", \"y\": "<<(this->image_size.y - (to.tile.y   + to.ty  ))<<" }"<<endl;
+				os<<"]";;
+				os<<endl;
+			}
 		}
 
 		os<<"],"<<endl;
-		os<<"\"portals\": [],"<<endl;
+		os<<"\"portals\": ["<<endl;
+
+		first = true;
+		for(usys_t i = 0; i < obstacles.Count(); i++)
+		{
+			if(obstacles[i].type == EObstacleType::DOOR)
+			{
+				/*
+					{
+						" *position": {
+							"x": 50,
+							"y": 48.5
+						},
+						"bounds": [
+							{
+							"x": 50,
+							"y": 48
+							},
+							{
+							"x": 50,
+							"y": 49
+							}
+						],
+						"rotation": 4.712389,
+						"closed": true,
+						"freestanding": false
+					},
+				*/
+				const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
+				const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
+
+				const tile_pos_t center = (from + to) / 2;
+
+				if(!first) os<<",";
+				first = false;
+				os<<"{"<<endl;
+				os<<"  \"position\": { \"x\": "<<(center.tile.x + center.tx)<<", \"y\": "<<(this->image_size.y - (center.tile.y + center.ty))<<" },"<<endl;
+				os<<"  \"bounds\": ["<<endl;
+				os<<"    { \"x\": "<<(from.tile.x + from.tx)<<", \"y\": "<<(this->image_size.y - (from.tile.y + from.ty))<<" },"<<endl;
+				os<<"    { \"x\": "<<(to.tile.x   + to.tx  )<<", \"y\": "<<(this->image_size.y - (to.tile.y   + to.ty  ))<<" }"<<endl;
+				os<<"  ],"<<endl;
+				os<<"  \"rotation\": 1,"<<endl;
+				os<<"  \"closed\": true,"<<endl;
+				os<<"  \"freestanding\": false"<<endl;
+				os<<"}"<<endl;
+			}
+		}
+		os<<"],"<<endl;
 		os<<"\"environment\": { \"baked_lighting\": false, \"ambient_light\": \"00000000\" },"<<endl;
+
+		/*
+			{
+				"position": {
+					"x": 38.742462,
+					"y": 44.529297
+				},
+				"range": 4.5,
+				"intensity": 1,
+				"color": "ffffad58",
+				"shadows": true
+			},
+		*/
+
 		os<<"\"lights\": ["<<endl;
+		first = true;
+		for(usys_t i = 0; i < lights.Count(); i++)
+		{
+			map_pos_t eff_pos = lights[i].pos - image_pos;
+			eff_pos.y = image_size.y - eff_pos.y - 1;
+			if(!first) os<<",";
+			first = false;
+			os<<"{"<<endl;
+			os<<"  \"position\": { \"x\": "<<eff_pos.x<<".5, \"y\": "<<eff_pos.y<<".5 },"<<endl;
+			os<<"  \"range\": "<<lights[i].range<<","<<endl;
+			os<<"  \"intensity\": 1,"<<endl;
+			os<<"  \"color\": \"00000000\","<<endl;
+			os<<"  \"shadows\": true"<<endl;
+			os<<"}"<<endl;
+		}
 		os<<"],"<<endl;
 
 		TMapping mapping(&image);
