@@ -571,13 +571,12 @@ namespace rim2vtt
 			{
 				for(s16_t x = 0; x < size[0]; x++)
 				{
-					if(terrain_grid_data[(/*size[1] -*/ y /*- 1*/) * size[0] + x] != 0)
+					if(terrain_grid_data[y * size[0] + x] != 0)
 					{
 						n_terrain++;
 						this->obstacle_map.PlaceObstacleAt({x,y}, EObstacleType::WALL);
 					}
 				}
-				fputc('\n', stdout);
 			}
 		}
 
