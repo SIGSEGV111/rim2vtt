@@ -541,47 +541,32 @@ namespace rim2vtt
 		unsigned n_terrain = 0;
 		unsigned n_lights = 0;
 
-
-
-
-
-
 		{
 			TList<u16_t> terrain_grid_data;
 			terrain_grid_data.Inflate(this->size[0] * this->size[1], 0);
 
 			auto terrain_node = map_node->FirstChildElement("compressedThingMapDeflate");
 			EL_ERROR(terrain_node == nullptr, TException, "no <terrainGrid> node found");
-// 			auto top_grid_deflate_node = terrain_node->FirstChildElement("topGridDeflate");
-// 			auto top_grid_plain_node = terrain_node->FirstChildElement("topGrid");
-// 			EL_ERROR((top_grid_deflate_node == nullptr && top_grid_plain_node == nullptr) || (top_grid_deflate_node != nullptr && top_grid_plain_node != nullptr), TException, "something is wrong with <topGridDeflate> and <topGrid>");
 
 			TList<char> base64_data;
-// 			const char* base64_text_src = (top_grid_deflate_node != nullptr) ? top_grid_deflate_node->GetText() : top_grid_plain_node->GetText();
 			const char* base64_text_src = terrain_node->GetText();
 			for(const char* p = base64_text_src; *p != 0; p++)
 				if(IsBase64Char(*p))
 					base64_data.Append(*p);
 
-			cerr<<"strlen(base64_text_src): "<<strlen(base64_text_src)<<endl;
-			cerr<<"base64_data.Count(): "<<base64_data.Count()<<endl;
-
-
 			TList<byte_t> raw_data;
 			raw_data.Append(0x78);
 			raw_data.Append(0x9c);
 			raw_data.Inflate(Base64decode_len(&base64_data[0]), 0);
-			cerr<<"raw_data.Count(): "<<raw_data.Count()<<endl;
 			int ret = Base64decode((char*)&raw_data[2], &base64_data[0]);
-			cerr<<"Base64decode: "<<ret<<endl;
 			EL_ERROR(ret < 0 || ret > (int)raw_data.Count(), TLogicException);
 			raw_data.Cut(0, raw_data.Count() - ret);
-
+			base64_data.Clear();
 
 			unsigned long uncompressed_size = terrain_grid_data.Count() * 2;
-			ret = uncompress((byte_t*)&terrain_grid_data[0], &uncompressed_size, (byte_t*)&raw_data[0], raw_data.Count());
-// 			EL_ERROR(uncompressed_size != terrain_grid_data.Count() * 2, TException, TString::Format("decompression of terrain-grid returned an unexpected amount of data (expected: %d, got: %d)", terrain_grid_data.Count() * 2, (usys_t)uncompressed_size));
-// 			Hexdump(&terrain_grid_data[0], terrain_grid_data.Count() * 2);
+			uncompress((byte_t*)&terrain_grid_data[0], &uncompressed_size, (byte_t*)&raw_data[0], raw_data.Count());
+			EL_ERROR(uncompressed_size > terrain_grid_data.Count() * 2, TLogicException);
+
 			for(s16_t y = 0; y < size[1]; y++)
 			{
 				for(s16_t x = 0; x < size[0]; x++)
@@ -596,13 +581,6 @@ namespace rim2vtt
 			}
 		}
 
-
-
-
-
-
-
-
 		for(auto thing_node = map_node->FirstChildElement("things")->FirstChildElement("thing"); thing_node != nullptr; thing_node = thing_node->	NextSiblingElement())
 		{
 			if(thing_node->Attribute("Class") != nullptr)
@@ -616,7 +594,6 @@ namespace rim2vtt
 					auto def_node = thing_node->FirstChildElement("def");
 					if(def_node != nullptr)
 					{
-
 						if(strcmp(def_node->GetText(), "Wall") == 0 || strcmp(def_node->GetText(), "RadiationShielding") == 0)
 						{
 							n_walls++;
