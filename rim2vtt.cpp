@@ -546,7 +546,7 @@ namespace rim2vtt
 			terrain_grid_data.Inflate(this->size[0] * this->size[1], 0);
 
 			auto terrain_node = map_node->FirstChildElement("compressedThingMapDeflate");
-			EL_ERROR(terrain_node == nullptr, TException, "no <terrainGrid> node found");
+			EL_ERROR(terrain_node == nullptr, TException, "no <compressedThingMapDeflate> node found");
 
 			TList<char> base64_data;
 			const char* base64_text_src = terrain_node->GetText();
