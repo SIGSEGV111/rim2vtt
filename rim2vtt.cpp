@@ -501,7 +501,7 @@ namespace rim2vtt
 
 	static bool IsBase64Char(const char chr)
 	{
-		return (chr >= 'A' && chr <= 'Z') || (chr >= 'a' && chr <= 'z') || (chr >= '0' && chr <= '9') || chr == '+' || chr == '/';
+		return (chr >= 'A' && chr <= 'Z') || (chr >= 'a' && chr <= 'z') || (chr >= '0' && chr <= '9') || chr == '+' || chr == '/' || chr == '=';
 	}
 
 	TMap::TMap(XMLElement* map_node) : obstacle_map(MapPosFromString(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
