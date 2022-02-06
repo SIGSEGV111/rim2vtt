@@ -408,8 +408,15 @@ namespace rim2vtt
 		v2i_t image_pos;
 		v2i_t image_size;
 
-		v2f_t ClipToImageArea(const v2f_t pos) const;
-		bool IsWithinImageArea(const v2i_t pos) const;
+		bool IsWithinImageArea(const v2i_t pos) const
+		{
+			return pos.AllBiggerEqual(image_pos) && pos.AllLess(image_pos + image_size);
+		}
+
+		bool IsWithinImageArea(const v2f_t pos) const
+		{
+			return pos.AllBiggerEqual((v2f_t)image_pos - v2f_t({1.0f,1.0f})) && pos.AllLess((v2f_t)image_pos + (v2f_t)image_size + v2f_t({1.0f,1.0f}));
+		}
 
 		void ExportVTT(ostream& os, TFile& image);
 		TMap(XMLElement* map_node);
@@ -575,16 +582,19 @@ namespace rim2vtt
 		{
 			if(obstacles[i].type == EObstacleType::WALL)
 			{
-				const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
-				const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+				if(IsWithinImageArea(obstacles[i].pos[0]) || IsWithinImageArea(obstacles[i].pos[1]))
+				{
+					const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+					const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
 
-				if(!first) os<<",";
-				first = false;
-				os<<"["<<endl;
-				os<<"  { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
-				os<<"  { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
-				os<<"]";;
-				os<<endl;
+					if(!first) os<<",";
+					first = false;
+					os<<"["<<endl;
+					os<<"  { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
+					os<<"  { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
+					os<<"]";;
+					os<<endl;
+				}
 			}
 		}
 
@@ -617,22 +627,26 @@ namespace rim2vtt
 						"freestanding": false
 					},
 				*/
-				const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
-				const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
-				const v2f_t center = (from + to) / 2.0f;
 
-				if(!first) os<<",";
-				first = false;
-				os<<"{"<<endl;
-				os<<"  \"position\": { \"x\": "<<center[0]<<", \"y\": "<<(this->image_size[1] - center[1])<<" },"<<endl;
-				os<<"  \"bounds\": ["<<endl;
-				os<<"    { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
-				os<<"    { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
-				os<<"  ],"<<endl;
-				os<<"  \"rotation\": 1,"<<endl;
-				os<<"  \"closed\": true,"<<endl;
-				os<<"  \"freestanding\": false"<<endl;
-				os<<"}"<<endl;
+				if(IsWithinImageArea(obstacles[i].pos[0]) || IsWithinImageArea(obstacles[i].pos[1]))
+				{
+					const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+					const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+					const v2f_t center = (from + to) / 2.0f;
+
+					if(!first) os<<",";
+					first = false;
+					os<<"{"<<endl;
+					os<<"  \"position\": { \"x\": "<<center[0]<<", \"y\": "<<(this->image_size[1] - center[1])<<" },"<<endl;
+					os<<"  \"bounds\": ["<<endl;
+					os<<"    { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
+					os<<"    { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
+					os<<"  ],"<<endl;
+					os<<"  \"rotation\": 1,"<<endl;
+					os<<"  \"closed\": true,"<<endl;
+					os<<"  \"freestanding\": false"<<endl;
+					os<<"}"<<endl;
+				}
 			}
 		}
 		os<<"],"<<endl;
@@ -655,17 +669,20 @@ namespace rim2vtt
 		first = true;
 		for(usys_t i = 0; i < lights.Count(); i++)
 		{
-			v2i_t eff_pos = lights[i].pos - image_pos;
-			eff_pos[1] = image_size[1] - eff_pos[1] - 1;
-			if(!first) os<<",";
-			first = false;
-			os<<"{"<<endl;
-			os<<"  \"position\": { \"x\": "<<eff_pos[0]<<".5, \"y\": "<<eff_pos[1]<<".5 },"<<endl;
-			os<<"  \"range\": "<<(lights[i].range/4.0f)<<","<<endl;
-			os<<"  \"intensity\": 1,"<<endl;
-			os<<"  \"color\": \"00000000\","<<endl;
-			os<<"  \"shadows\": true"<<endl;
-			os<<"}"<<endl;
+			if(IsWithinImageArea(lights[i].pos))
+			{
+				v2i_t eff_pos = lights[i].pos - image_pos;
+				eff_pos[1] = image_size[1] - eff_pos[1] - 1;
+				if(!first) os<<",";
+				first = false;
+				os<<"{"<<endl;
+				os<<"  \"position\": { \"x\": "<<eff_pos[0]<<".5, \"y\": "<<eff_pos[1]<<".5 },"<<endl;
+				os<<"  \"range\": "<<(lights[i].range/4.0f)<<","<<endl;
+				os<<"  \"intensity\": 1,"<<endl;
+				os<<"  \"color\": \"00000000\","<<endl;
+				os<<"  \"shadows\": true"<<endl;
+				os<<"}"<<endl;
+			}
 		}
 		os<<"],"<<endl;
 
