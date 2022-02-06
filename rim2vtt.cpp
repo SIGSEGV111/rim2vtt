@@ -21,108 +21,19 @@ namespace rim2vtt
 	using namespace el1::math;
 	using namespace el1::debug;
 
-	struct tile_pos_t;
+	using v2i_t = TVector<s16_t, 2>;
+	using v2f_t = TVector<float, 2>;
 
-	using map_pos_t = TVector<s16_t, 2>;
-
-	static map_pos_t MapPosFromString(const char* const str)
+	static v2i_t V2iFromRimworldPos(const char* const str)
 	{
-		map_pos_t pos;
-		if(sscanf(str, " ( %hd , %*d , %hd ) ", &pos[0], &pos[1]) != 2)
-			throw "unable to parse map size";
+		v2i_t pos;
+		EL_ERROR(sscanf(str, " ( %hd , %*d , %hd ) ", &pos[0], &pos[1]) != 2, TException, TString::Format("unable to parse %q as position", str));
 		return pos;
 	}
 
-	struct tile_pos_t
-	{
-		map_pos_t tile;
-		float tx, ty;
-
-		void Normalize()
-		{
-			// FIXME: ... no comment ...
-			while(tx > 0.5f)
-			{
-				tile[0]++;
-				tx -= 1.0f;
-			}
-
-			while(tx < -0.5f)
-			{
-				tile[0]--;
-				tx += 1.0f;
-			}
-
-			while(ty > 0.5f)
-			{
-				tile[1]++;
-				ty -= 1.0f;
-			}
-
-			while(ty < -0.5f)
-			{
-				tile[1]--;
-				ty += 1.0f;
-			}
-		}
-
-		tile_pos_t& operator+=(const tile_pos_t& rhs)
-		{
-			tile += rhs.tile;
-			tx += rhs.tx;
-			ty += rhs.ty;
-			Normalize();
-			return *this;
-		}
-
-		tile_pos_t& operator-=(const tile_pos_t& rhs)
-		{
-			tile -= rhs.tile;
-			tx -= rhs.tx;
-			ty -= rhs.ty;
-			Normalize();
-			return *this;
-		}
-
-		tile_pos_t operator+(const tile_pos_t& rhs) const
-		{
-			tile_pos_t r = *this;
-			r += rhs;
-			return r;
-		}
-
-		tile_pos_t operator-(const tile_pos_t& rhs) const
-		{
-			tile_pos_t r = *this;
-			r -= rhs;
-			return r;
-		}
-
-		tile_pos_t& operator/=(const float divider)
-		{
-			tx = (tile[0] + tx) / divider;
-			ty = (tile[1] + ty) / divider;
-			tile[0] = 0;
-			tile[1] = 0;
-			Normalize();
-			return *this;
-		}
-
-		tile_pos_t operator/(const float divider) const
-		{
-			tile_pos_t r = *this;
-			r /= divider;
-			return r;
-		}
-
-		tile_pos_t(const map_pos_t pos = {0,0}, const float tx = 0.0f, const float ty = 0.0f) : tile({ pos[0], pos[1] }), tx(tx), ty(ty)
-		{
-		}
-	};
-
 	struct light_source_t
 	{
-		map_pos_t pos;
+		v2i_t pos;
 		float range;
 	};
 
@@ -136,7 +47,7 @@ namespace rim2vtt
 
 	struct obstacle_t
 	{
-		tile_pos_t pos[2];
+		v2f_t pos[2];
 		EObstacleType type;
 	};
 
@@ -152,7 +63,7 @@ namespace rim2vtt
 	{
 		protected:
 			TObstacleMap* const map; // 8
-			const map_pos_t pos; // 4
+			const v2i_t pos; // 4
 			const EObstacleType type; // 1
 			u8_t mask_proccessed; // 1
 			u8_t mask_neighbor; // 1
@@ -163,13 +74,14 @@ namespace rim2vtt
 
 		public:
 			static const unsigned N_DIRECTIONS = 8;
-			static const tile_pos_t DIRECTIONS[N_DIRECTIONS];
+			static const v2i_t MAP_DIRECTIONS[N_DIRECTIONS];
+			static const v2f_t TILE_DIRECTIONS[N_DIRECTIONS];
 
 			static unsigned InvertDirection(const unsigned original_direction);
 			u8_t AllNeighborsCount() const { return this->n_all_neighbors; }
 			u8_t CrossNeighborsCount() const { return this->n_cross_neighbors; }
 			TObstacleMap* Map() { return this->map; }
-			map_pos_t Position() const { return this->pos; }
+			v2i_t Position() const { return this->pos; }
 			EObstacleType Type() const { return this->type; }
 			bool HasUnprocessedDirections() const { return this->mask_proccessed != 255; }
 			TObstacleNode* Neighbor(const unsigned direction);
@@ -178,7 +90,7 @@ namespace rim2vtt
 			bool WasDirectionProcessed(const unsigned direction) const;
 			void MarkDirectionProcessed(const unsigned direction, const bool mark = true);
 			void UpdateNeighbors();
-			TObstacleNode(TObstacleMap* const map, const map_pos_t pos, const EObstacleType type) : map(map), pos(pos), type(type), mask_proccessed(0), mask_neighbor(0), n_all_neighbors(0), n_cross_neighbors(0) {}
+			TObstacleNode(TObstacleMap* const map, const v2i_t pos, const EObstacleType type) : map(map), pos(pos), type(type), mask_proccessed(0), mask_neighbor(0), n_all_neighbors(0), n_cross_neighbors(0) {}
 	};
 
 	class TObstacleMap
@@ -187,32 +99,32 @@ namespace rim2vtt
 			TList<TObstacleNode> nodes;
 			TList<tile_index_t> array;
 			TList<obstacle_t> graph;
-			const map_pos_t size;
+			const v2i_t size;
 
 			TObstacleNode* Walk(TObstacleNode& start_node, const unsigned direction, bool& terminated_by_transition_or_processed_direction);
 
 		public:
-			map_pos_t Size() const { return size; }
-			bool IsValidPosition(const map_pos_t pos) const;
-			tile_index_t PlaceObstacleAt(const map_pos_t pos, const EObstacleType type);
-			TObstacleNode* operator[](const map_pos_t pos);
-			const TObstacleNode* operator[](const map_pos_t pos) const;
+			v2i_t Size() const { return size; }
+			bool IsValidPosition(const v2i_t pos) const;
+			tile_index_t PlaceObstacleAt(const v2i_t pos, const EObstacleType type);
+			TObstacleNode* operator[](const v2i_t pos);
+			const TObstacleNode* operator[](const v2i_t pos) const;
 			void ComputeObstacleGraph();
 			const TList<const obstacle_t>& Graph() const { return this->graph; }
 
-			TObstacleMap(const map_pos_t size);
+			TObstacleMap(const v2i_t size);
 	};
 
 	/****************************************************************************/
 
 	TObstacleNode* TObstacleNode::Neighbor(const unsigned direction)
 	{
-		return (*this->map)[this->pos + DIRECTIONS[direction].tile];
+		return (*this->map)[this->pos + MAP_DIRECTIONS[direction]];
 	}
 
 	const TObstacleNode* TObstacleNode::Neighbor(const unsigned direction) const
 	{
-		return (*this->map)[this->pos + DIRECTIONS[direction].tile];
+		return (*this->map)[this->pos + MAP_DIRECTIONS[direction]];
 	}
 
 	bool TObstacleNode::HasNeighbor(const unsigned direction) const
@@ -276,25 +188,37 @@ namespace rim2vtt
 	}
 
 	// do not change order!
-	const tile_pos_t TObstacleNode::DIRECTIONS[TObstacleNode::N_DIRECTIONS] = {
-		{ {-1, 0}, -0.5f,  0.0f }, // WEST
-		{ {-1,-1}, -0.5f, -0.5f }, // NORTH WEST
-		{ { 0,-1},  0.0f, -0.5f }, // NORTH
-		{ { 1,-1},  0.5f, -0.5f }, // NORTH EAST
-		{ { 1, 0},  0.5f,  0.0f }, // EAST
-		{ { 1, 1},  0.5f,  0.5f }, // SOUTH EAST
-		{ { 0, 1},  0.0f,  0.5f }, // SOUTH
-		{ {-1, 1}, -0.5f,  0.5f }, // SOUTH WEST
+	const v2i_t TObstacleNode::MAP_DIRECTIONS[TObstacleNode::N_DIRECTIONS] = {
+		{-1, 0}, // WEST
+		{-1,-1}, // NORTH WEST
+		{ 0,-1}, // NORTH
+		{ 1,-1}, // NORTH EAST
+		{ 1, 0}, // EAST
+		{ 1, 1}, // SOUTH EAST
+		{ 0, 1}, // SOUTH
+		{-1, 1}, // SOUTH WEST
 	};
 
-	static tile_pos_t RimworldRotationToVector(const int rot)
+	// do not change order!
+	const v2f_t TObstacleNode::TILE_DIRECTIONS[TObstacleNode::N_DIRECTIONS] = {
+		{ -0.5f,  0.0f }, // WEST
+		{ -0.5f, -0.5f }, // NORTH WEST
+		{  0.0f, -0.5f }, // NORTH
+		{  0.5f, -0.5f }, // NORTH EAST
+		{  0.5f,  0.0f }, // EAST
+		{  0.5f,  0.5f }, // SOUTH EAST
+		{  0.0f,  0.5f }, // SOUTH
+		{ -0.5f,  0.5f }, // SOUTH WEST
+	};
+
+	static v2i_t RimworldRotationToVector(const int rot)
 	{
 		switch(rot)
 		{
-			case 0: return TObstacleNode::DIRECTIONS[6];
-			case 1: return TObstacleNode::DIRECTIONS[4];
-			case 2: return TObstacleNode::DIRECTIONS[2];
-			case 3: return TObstacleNode::DIRECTIONS[0];
+			case 0: return TObstacleNode::MAP_DIRECTIONS[6];
+			case 1: return TObstacleNode::MAP_DIRECTIONS[4];
+			case 2: return TObstacleNode::MAP_DIRECTIONS[2];
+			case 3: return TObstacleNode::MAP_DIRECTIONS[0];
 			default: EL_THROW(TInvalidArgumentException, "rot");
 		}
 	}
@@ -306,12 +230,12 @@ namespace rim2vtt
 
 	/****************************************************************************/
 
-	bool TObstacleMap::IsValidPosition(const map_pos_t pos) const
+	bool TObstacleMap::IsValidPosition(const v2i_t pos) const
 	{
 		return pos[0] >= 0 && pos[1] >= 0 && pos[0] < size[0] && pos[1] < size[1];
 	}
 
-	tile_index_t TObstacleMap::PlaceObstacleAt(const map_pos_t pos, const EObstacleType type)
+	tile_index_t TObstacleMap::PlaceObstacleAt(const v2i_t pos, const EObstacleType type)
 	{
 		tile_index_t& index = this->array[pos[1] * this->size[0] + pos[0]];
 		EL_ERROR(index != INDEX_NONE, TException, TString::Format("cannot place obstacle at {%d; %d}: there is already an obstacle here (current-type: %d, wanted-type: %d)", pos[0], pos[1], (u8_t)this->nodes[index].Type(), (u8_t)type));
@@ -322,7 +246,7 @@ namespace rim2vtt
 		return index;
 	}
 
-	TObstacleNode* TObstacleMap::operator[](const map_pos_t pos)
+	TObstacleNode* TObstacleMap::operator[](const v2i_t pos)
 	{
 		if(this->IsValidPosition(pos))
 		{
@@ -336,7 +260,7 @@ namespace rim2vtt
 			return nullptr;
 	}
 
-	const TObstacleNode* TObstacleMap::operator[](const map_pos_t pos) const
+	const TObstacleNode* TObstacleMap::operator[](const v2i_t pos) const
 	{
 		if(this->IsValidPosition(pos))
 		{
@@ -418,7 +342,7 @@ namespace rim2vtt
 					{
 						TObstacleNode* endpoints[2] = {};
 						bool terminated_by_transition_or_processed_direction[2] = {};
-						tile_pos_t endpoint_positions[2];
+						v2f_t endpoint_positions[2];
 						unsigned endpoint_directions[2] = { direction, TObstacleNode::InvertDirection(direction) };
 
 						endpoints[0] = Walk(start_node, endpoint_directions[0], terminated_by_transition_or_processed_direction[0]);
@@ -427,29 +351,23 @@ namespace rim2vtt
 						for(unsigned idx_endpoint = 0; idx_endpoint < 2; idx_endpoint++)
 						{
 							TObstacleNode& endpoint = *endpoints[idx_endpoint];
-							tile_pos_t& position = endpoint_positions[idx_endpoint];
+							v2f_t& position = endpoint_positions[idx_endpoint];
 							const unsigned endpoint_direction = endpoint_directions[idx_endpoint];
-							position.tile = endpoint.Position();
 
 							if(terminated_by_transition_or_processed_direction[idx_endpoint])
 							{
 								if(endpoint.CrossNeighborsCount() > 2)
 								{
 									// place obstacle at center
-									position.tx = 0.0f;
-									position.ty = 0.0f;
+									position = (v2f_t)endpoint.Position();
 
 									// create second obstacle from center towards edge
 									if(endpoints[0] != endpoints[1] || idx_endpoint == 0)
 									{
 										this->graph.Append(obstacle_t({
 											{
-												{ endpoint.Position(), 0.0f, 0.0f },
-												{
-													endpoint.Position(),
-													TObstacleNode::DIRECTIONS[endpoint_direction].tx,
-													TObstacleNode::DIRECTIONS[endpoint_direction].ty
-												}
+												(v2f_t)endpoint.Position(),
+												(v2f_t)endpoint.Position() + TObstacleNode::TILE_DIRECTIONS[endpoint_direction]
 											},
 											start_node.Type()
 										}));
@@ -458,15 +376,13 @@ namespace rim2vtt
 								else //if(endpoint.NeighborsCount() <= 2)
 								{
 									// place obstacle at edge
-									position.tx = TObstacleNode::DIRECTIONS[endpoint_direction].tx;
-									position.ty = TObstacleNode::DIRECTIONS[endpoint_direction].ty;
+									position = (v2f_t)endpoint.Position() + TObstacleNode::TILE_DIRECTIONS[endpoint_direction];
 								}
 							}
 							else
 							{
 								// place at center
-								position.tx = 0.0f;
-								position.ty = 0.0f;
+								position = (v2f_t)endpoint.Position();
 							}
 						}
 
@@ -477,7 +393,7 @@ namespace rim2vtt
 		}
 	}
 
-	TObstacleMap::TObstacleMap(const map_pos_t size) : size(size)
+	TObstacleMap::TObstacleMap(const v2i_t size) : size(size)
 	{
 		array.Inflate(size[0] * size[1], INDEX_NONE);
 	}
@@ -488,12 +404,12 @@ namespace rim2vtt
 	{
 		TObstacleMap obstacle_map;
 		TList<light_source_t> lights;
-		const map_pos_t size;
-		map_pos_t image_pos;
-		map_pos_t image_size;
+		const v2i_t size;
+		v2i_t image_pos;
+		v2i_t image_size;
 
-		tile_pos_t ClipToImageArea(const tile_pos_t pos) const;
-		bool IsWithinImageArea(const map_pos_t pos) const;
+		v2f_t ClipToImageArea(const v2f_t pos) const;
+		bool IsWithinImageArea(const v2i_t pos) const;
 
 		void ExportVTT(ostream& os, TFile& image);
 		TMap(XMLElement* map_node);
@@ -504,7 +420,7 @@ namespace rim2vtt
 		return (chr >= 'A' && chr <= 'Z') || (chr >= 'a' && chr <= 'z') || (chr >= '0' && chr <= '9') || chr == '+' || chr == '/' || chr == '=';
 	}
 
-	TMap::TMap(XMLElement* map_node) : obstacle_map(MapPosFromString(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
+	TMap::TMap(XMLElement* map_node) : obstacle_map(V2iFromRimworldPos(map_node->FirstChildElement("mapInfo")->FirstChildElement("size")->GetText())), size(obstacle_map.Size())
 	{
 		cerr<<endl<<"map ID: "<<map_node->FirstChildElement("uniqueID")->UnsignedText()<<endl;
 		cerr<<"size: ["<<this->size[0]<<"; "<<this->size[1]<<"]"<<endl;
@@ -521,7 +437,7 @@ namespace rim2vtt
 					(s16_t)list_node->FirstChildElement("rsTargetStartZ")->Int64Text(-1)
 				};
 
-				const map_pos_t end = {
+				const v2i_t end = {
 					(s16_t)list_node->FirstChildElement("rsTargetEndX")->Int64Text(-1),
 					(s16_t)list_node->FirstChildElement("rsTargetEndZ")->Int64Text(-1)
 				};
@@ -584,7 +500,7 @@ namespace rim2vtt
 		{
 			if(thing_node->Attribute("Class") != nullptr)
 			{
-				const map_pos_t pos = thing_node->FirstChildElement("pos")->GetText() != nullptr ? MapPosFromString(thing_node->FirstChildElement("pos")->GetText()) : map_pos_t({0,0});
+				const v2i_t pos = thing_node->FirstChildElement("pos")->GetText() != nullptr ? V2iFromRimworldPos(thing_node->FirstChildElement("pos")->GetText()) : v2i_t({0,0});
 
 				if( strcmp(thing_node->Attribute("Class"), "Building") == 0 ||
 					strcmp(thing_node->Attribute("Class"), "Building_Door") == 0 ||
@@ -625,7 +541,7 @@ namespace rim2vtt
 					n_lights++;
 					auto rot_node = thing_node->FirstChildElement("rot");
 					const int rot = (rot_node == nullptr) ? 0 : rot_node->Int64Text(0);
-					this->lights.Append(light_source_t({pos + RimworldRotationToVector(rot).tile, 6}));
+					this->lights.Append(light_source_t({pos + RimworldRotationToVector(rot), 6}));
 				}
 			}
 		}
@@ -659,14 +575,14 @@ namespace rim2vtt
 		{
 			if(obstacles[i].type == EObstacleType::WALL)
 			{
-				const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
-				const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
+				const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+				const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
 
 				if(!first) os<<",";
 				first = false;
 				os<<"["<<endl;
-				os<<"  { \"x\": "<<(from.tile[0] + from.tx)<<", \"y\": "<<(this->image_size[1] - (from.tile[1] + from.ty))<<" },"<<endl;
-				os<<"  { \"x\": "<<(to.tile[0]   + to.tx  )<<", \"y\": "<<(this->image_size[1] - (to.tile[1]   + to.ty  ))<<" }"<<endl;
+				os<<"  { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
+				os<<"  { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
 				os<<"]";;
 				os<<endl;
 			}
@@ -701,18 +617,17 @@ namespace rim2vtt
 						"freestanding": false
 					},
 				*/
-				const tile_pos_t from = obstacles[i].pos[0] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
-				const tile_pos_t to   = obstacles[i].pos[1] - this->image_pos + tile_pos_t({{0,0},0.5f,0.5f});
-
-				const tile_pos_t center = (from + to) / 2;
+				const v2f_t from = obstacles[i].pos[0] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+				const v2f_t to   = obstacles[i].pos[1] - (v2f_t)this->image_pos + v2f_t({0.5f,0.5f});
+				const v2f_t center = (from + to) / 2.0f;
 
 				if(!first) os<<",";
 				first = false;
 				os<<"{"<<endl;
-				os<<"  \"position\": { \"x\": "<<(center.tile[0] + center.tx)<<", \"y\": "<<(this->image_size[1] - (center.tile[1] + center.ty))<<" },"<<endl;
+				os<<"  \"position\": { \"x\": "<<center[0]<<", \"y\": "<<(this->image_size[1] - center[1])<<" },"<<endl;
 				os<<"  \"bounds\": ["<<endl;
-				os<<"    { \"x\": "<<(from.tile[0] + from.tx)<<", \"y\": "<<(this->image_size[1] - (from.tile[1] + from.ty))<<" },"<<endl;
-				os<<"    { \"x\": "<<(to.tile[0]   + to.tx  )<<", \"y\": "<<(this->image_size[1] - (to.tile[1]   + to.ty  ))<<" }"<<endl;
+				os<<"    { \"x\": "<<from[0]<<", \"y\": "<<(this->image_size[1] - from[1])<<" },"<<endl;
+				os<<"    { \"x\": "<<to[0]  <<", \"y\": "<<(this->image_size[1] - to[1]  )<<" }"<<endl;
 				os<<"  ],"<<endl;
 				os<<"  \"rotation\": 1,"<<endl;
 				os<<"  \"closed\": true,"<<endl;
@@ -740,7 +655,7 @@ namespace rim2vtt
 		first = true;
 		for(usys_t i = 0; i < lights.Count(); i++)
 		{
-			map_pos_t eff_pos = lights[i].pos - image_pos;
+			v2i_t eff_pos = lights[i].pos - image_pos;
 			eff_pos[1] = image_size[1] - eff_pos[1] - 1;
 			if(!first) os<<",";
 			first = false;
