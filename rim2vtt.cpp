@@ -418,7 +418,7 @@ namespace rim2vtt
 			return pos.AllBiggerEqual((v2f_t)image_pos - v2f_t({1.0f,1.0f})) && pos.AllLess((v2f_t)image_pos + (v2f_t)image_size + v2f_t({1.0f,1.0f}));
 		}
 
-		void ExportVTT(ostream& os, TFile& image);
+		void ExportVTT(ostream& os, TFile* const image);
 		TMap(XMLElement* map_node);
 	};
 
@@ -563,7 +563,7 @@ namespace rim2vtt
 		cerr<<"obstacles: "<<this->obstacle_map.Graph().Count()<<endl;
 	}
 
-	void TMap::ExportVTT(ostream& os, TFile& image)
+	void TMap::ExportVTT(ostream& os, TFile* const image)
 	{
 		const TList<const obstacle_t>& obstacles = this->obstacle_map.Graph();
 
@@ -686,16 +686,21 @@ namespace rim2vtt
 		}
 		os<<"],"<<endl;
 
-		TMapping mapping(&image);
-		const int b64_size = Base64encode_len(mapping.Count());
-		TList<byte_t> b64_data;
-		b64_data.Inflate(b64_size, 0);
-		EL_ERROR(Base64encode((char*)&b64_data[0], (const char*)&mapping[0], mapping.Count()) != b64_size, TLogicException);
+		if(image != nullptr)
+		{
+			TMapping mapping(image);
+			const int b64_size = Base64encode_len(mapping.Count());
+			TList<byte_t> b64_data;
+			b64_data.Inflate(b64_size, 0);
+			EL_ERROR(Base64encode((char*)&b64_data[0], (const char*)&mapping[0], mapping.Count()) != b64_size, TLogicException);
 
-		os<<"\"image\":\"";
-		os.write((const char*)&b64_data[0], b64_size - 1);
-		EL_ERROR(os.bad(), TException, "badbit set after write()");
-		os<<"\""<<endl;
+			os<<"\"image\":\"";
+			os.write((const char*)&b64_data[0], b64_size - 1);
+			EL_ERROR(os.bad(), TException, "badbit set after write()");
+			os<<"\""<<endl;
+		}
+		else
+			os<<"\"image\":null"<<endl;
 		os<<"}"<<endl;
 	}
 }
@@ -707,16 +712,27 @@ int main(int argc, char* argv[])
 {
 	try
 	{
-		if(argc < 3)
-		{
-			throw "missing argument";
-		}
-
 		XMLDocument doc;
-		doc.LoadFile(argv[1]);
+		unique_ptr<TFile> image = nullptr;
+
+		if(argc == 3)
+		{
+			EL_ERROR(doc.LoadFile(argv[1]) != XML_SUCCESS, TException, "unable to load savegame XML");
+			image = unique_ptr<TFile>(new TFile(argv[2]));
+		}
+		else if(argc == 2)
+		{
+			EL_ERROR(doc.LoadFile(argv[1]) != XML_SUCCESS, TException, "unable to load savegame XML");
+		}
+		else if(argc == 1)
+		{
+			EL_ERROR(doc.LoadFile(stdin) != XML_SUCCESS, TException, "unable to load savegame XML");
+		}
+		else
+			EL_THROW(TException, TString::Format("got unexpected number of arguments (got: %d, expected: 1 to 3)", argc));
+
 		TMap map(doc.RootElement()->FirstChildElement("game")->FirstChildElement("maps")->FirstChildElement("li"));
-		TFile image(argv[2]);
-		map.ExportVTT(cout, image);
+		map.ExportVTT(cout, image.get());
 
 		return 0;
 	}
