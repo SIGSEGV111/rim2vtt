@@ -15,7 +15,7 @@ In the mod settings dialog:
 - Format: whatever your VTT system supports
 
 On the map:
-- Place render markers in Rimworld to limit the image area (optional)
+- Place render markers to limit the image area (optional)
 
 ## usage
 
@@ -42,3 +42,7 @@ All files without license text are covered by `LICENSE.txt`.
 `base64.c` and `base64.h`:
 Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
 Copyright (c) 1995-1999 The Apache Group.  All rights reserved.
+
+## Pictures
+
+[<img src="https://raw.githubusercontent.com/SIGSEGV111/rim2vtt/master/walls.png">](https://raw.githubusercontent.com/SIGSEGV111/rim2vtt/master/walls.png)
